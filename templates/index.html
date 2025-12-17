@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ENTSO-E Energy Explorer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+</head>
+<body>
+    <div class="page">
+        <header class="hero">
+            <div>
+                <p class="eyebrow">ENTSO-E platform</p>
+                <h1>Electricity prices and generation per production type data</h1>
+                <p class="lead">Choose location and date range to get market prices or generation per production type.</p>
+            </div>
+            <div class="badge">Live data</div>
+        </header>
+
+        <section class="panel">
+            <form id="query-form">
+                <!-- Step 1: Data Type Selection -->
+                <div id="step-1" class="form-step">
+                    <h3 class="step-title">Step 1: Choose Data Type</h3>
+                    <div class="toggle-group">
+                        <label class="toggle-option">
+                            <input type="radio" name="type" value="prices" required>
+                            <span class="toggle-label">Market prices</span>
+                        </label>
+                        <label class="toggle-option">
+                            <input type="radio" name="type" value="generation" required>
+                            <span class="toggle-label">Generation per production type</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- step 2: location Type Selection -->
+                <div id="step-2" class="form-step" style="display: none;">
+                    <h3 class="step-title">Step 2: Choose Location Type</h3>
+                    <div class="toggle-group">
+                        <label class="toggle-option">
+                            <input type="radio" name="location-type" value="bidding-zones" required>
+                            <span class="toggle-label">Bidding zones</span>
+                        </label>
+                        <label class="toggle-option">
+                            <input type="radio" name="location-type" value="countries" required>
+                            <span class="toggle-label">Countries</span>
+                        </label>
+                        <label class="toggle-option">
+                            <input type="radio" name="location-type" value="control-areas" required>
+                            <span class="toggle-label">Control areas</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- step 3: location Selection -->
+                <div id="step-3" class="form-step" style="display: none;">
+                    <h3 class="step-title">Step 3: Select Location</h3>
+                    <div class="form-grid">
+                        <label class="field">
+                            <span id="location-label">Location</span>
+                            <select name="zone" id="location-select" required>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>Start date <small>(click to change)</small></span>
+                            <input type="date" name="start" required>
+                        </label>
+                        <label class="field">
+                            <span>End date <small>(click to change)</small></span>
+                            <input type="date" name="end" required>
+                        </label>
+                        <button class="primary" type="submit">Fetch data</button>
+                    </div>
+                </div>
+            </form>
+            <p class="hint">Europe/Ljubljana timezone is used.</p>
+        </section>
+
+        <!-- hidden data for JS -->
+        <script id="location-data" type="application/json">
+            {
+                "bidding-zones": {{ bidding_zones.keys() | list | tojson }},
+                "countries": {{ countries.keys() | list | tojson }},
+                "control-areas": {{ control_areas.keys() | list | tojson }}
+            }
+        </script>
+
+        <section class="panel">
+            <div class="panel-header">
+                <div id="status" class="status">Select option in Step 1.</div>
+                <div id="view-toggle" class="view-toggle" style="display: none;">
+                    <button id="graph-view-btn" class="view-btn active">Graph</button>
+                    <button id="table-view-btn" class="view-btn">Table</button>
+                </div>
+            </div>
+            <div id="graph-container">
+                <canvas id="chart" height="120"></canvas>
+                <div id="table-wrapper" class="table-wrapper">
+                    <table id="summary-table"></table>
+                </div>
+            </div>
+            <div id="data-table-container" class="data-table-container" style="display: none;">
+                <div class="table-wrapper">
+                    <table id="data-table"></table>
+                </div>
+            </div>
+        </section>
+
+        <!-- templates for dynamic table rendering -->
+        <template id="summary-prices-template">
+            <thead>
+                <tr><th>Statistic</th><th>Value (EUR/MWh)</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Min</td><td data-field="min"></td></tr>
+                <tr><td>Average</td><td data-field="mean"></td></tr>
+                <tr><td>Max</td><td data-field="max"></td></tr>
+            </tbody>
+        </template>
+
+        <template id="summary-generation-template">
+            <thead>
+                <tr><th>Production type</th><th data-field="avg-header">Values</th><th data-field="peak-header">Peak</th></tr>
+            </thead>
+            <tbody></tbody>
+        </template>
+
+        <template id="summary-generation-row-template">
+            <tr>
+                <td data-field="label"></td>
+                <td data-field="avg"></td>
+                <td data-field="peak"></td>
+            </tr>
+        </template>
+
+        <template id="no-data-template">
+            <thead>
+                <tr><th data-field="col1">Statistic</th><th data-field="col2">Value</th></tr>
+            </thead>
+            <tbody>
+                <tr><td colspan="2" style="text-align: center; color: var(--muted);">No data available</td></tr>
+            </tbody>
+        </template>
+
+        <template id="data-table-prices-template">
+            <thead>
+                <tr>
+                    <th data-field="time-header">Date</th>
+                    <th>Price (EUR/MWh)</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </template>
+
+        <template id="data-table-prices-row-template">
+            <tr>
+                <td data-field="time"></td>
+                <td data-field="price"></td>
+            </tr>
+        </template>
+
+        <template id="data-table-generation-template">
+            <thead>
+                <tr></tr>
+            </thead>
+            <tbody></tbody>
+        </template>
+
+        <template id="data-table-generation-row-template">
+            <tr></tr>
+        </template>
+    </div>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
